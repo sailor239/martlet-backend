@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from app.db import init_db_pool, fetch_all_data
 from app.db_init import init_db_with_csv
 from fastapi.middleware.cors import CORSMiddleware
+from app.utils.data_pipeline_utils import fetch_data
 
 
 @asynccontextmanager
@@ -11,9 +12,8 @@ async def lifespan(app: FastAPI):
     print("🚀 Starting lifespan")
     try:
         await init_db_pool()
-        print("✅ DB pool initialized")
-        await init_db_with_csv()
-        print("✅ CSV data loaded")
+        # fetch_data("tiingo", "xauusd", "5min", "2025-06-01")
+        # await init_db_with_csv()
     except Exception as e:
         print(f"❌ Error during startup: {e}")
     yield

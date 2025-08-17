@@ -8,6 +8,7 @@ CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS market_snapshot (
     id SERIAL PRIMARY KEY,
     timestamp TIMESTAMP NOT NULL,
+    ticker TEXT NOT NULL,
     open DOUBLE PRECISION,
     high DOUBLE PRECISION,
     low DOUBLE PRECISION,
@@ -17,8 +18,8 @@ CREATE TABLE IF NOT EXISTS market_snapshot (
 """
 
 INSERT_ROW_SQL = """
-INSERT INTO market_snapshot (timestamp, open, high, low, close, volume)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO market_snapshot (timestamp, ticker, open, high, low, close, volume)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 """
 
 async def init_db_with_csv():
@@ -30,18 +31,22 @@ async def init_db_with_csv():
 
         with open(CSV_PATH, newline="") as csvfile:
             reader = csv.DictReader(csvfile)
-
             rows = []
             for row in reader:
                 try:
-                    timestamp_dt = datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M")
+                    # Parse ISO8601 timestamp (remove 'Z' if present)
+                    timestamp_str = row["date"].rstrip("Z")
+                    timestamp_dt = datetime.fromisoformat(timestamp_str)
+                    # For data from forexsb
+                    # timestamp_dt = datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M")
                     rows.append((
                         timestamp_dt,
+                        row["ticker"],
                         float(row["open"]),
                         float(row["high"]),
                         float(row["low"]),
                         float(row["close"]),
-                        float(row["volume"]),
+                        None  # volume is missing
                     ))
                 except Exception as row_err:
                     print(f"⚠️ Skipping bad row: {row} -> {row_err}")
