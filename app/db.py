@@ -14,6 +14,6 @@ async def fetch_all_data():
 
     async with db_pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT ticker, timestamp, open, high, low, close, volume FROM market_snapshot ORDER BY timestamp"
+            "SELECT ticker, timeframe, timestamp, open, high, low, close FROM market_snapshot ORDER BY timestamp"
         )
         return [dict(row) for row in rows]
