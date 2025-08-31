@@ -1,27 +1,35 @@
+import logging
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
 from app.db import db
 from app.db_init import init_db_with_csv
+from app.services.scheduler import scheduler_service
 from fastapi.middleware.cors import CORSMiddleware
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🚀 Starting lifespan")
+    logger.info("🚀 Starting Martlet backend...")
     try:
         await db.connect()
         # await init_db_with_csv()
+        scheduler_service.start()
+        logger.info("✅ Application startup complete")
     except Exception as e:
-        print(f"❌ Error during startup: {e}")
+        logger.error(f"❌ Error during startup: {e}")
+    
     yield
 
-    print("🛑 Stopping lifespan")
+    logger.info("🛑 Stopping Martlet backend")
     try:
+        scheduler_service.stop()
         await db.disconnect()
-        print("✅ DB disconnected")
+        logger.info("✅ DB disconnected")
     except Exception as e:
-        print(f"❌ Error during shutdown: {e}")
+        logger.error(f"❌ Error during shutdown: {e}")
 
 app = FastAPI(lifespan=lifespan)
 

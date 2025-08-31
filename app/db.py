@@ -1,7 +1,10 @@
+import logging
 import asyncpg
 from typing import Optional
+from datetime import datetime
 from app.config import DATABASE_URL
 
+logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self):
@@ -37,7 +40,49 @@ class DatabaseManager:
                 "SELECT ticker, timeframe, timestamp, open, high, low, close FROM market_snapshot ORDER BY timestamp"
             )
             return [dict(row) for row in rows]
+    
+    async def get_last_candle_timestamp(self, ticker: str, timeframe: str) -> datetime | None:
+        """Get the most recent candle timestamp from database"""
+        async with self.pool.acquire() as conn:
+            result = await conn.fetchrow(
+                "SELECT MAX(timestamp) as last_timestamp FROM market_snapshot WHERE ticker = $1 and timeframe = $2",
+                ticker, timeframe
+            )
+            return result['last_timestamp'] if result and result['last_timestamp'] else None
+    
+    async def upsert_candles(self, ticker: str, timeframe: str, candles_data: list):
+        if not candles_data:
+            logger.warning(f"No candles data provided for {ticker} {timeframe}")
+            return
+        
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    rows = [
+                        (ticker, candle['timestamp'], timeframe, 
+                        float(candle['open']), float(candle['high']), 
+                        float(candle['low']), float(candle['close']), 
+                        )
+                        for candle in candles_data
+                    ]
+                    
+                    result = await conn.executemany("""
+                        INSERT INTO market_snapshot (ticker, timestamp, timeframe, open, high, low, close)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        ON CONFLICT (ticker, timeframe, timestamp) 
+                        DO UPDATE SET 
+                            open = EXCLUDED.open,
+                            high = EXCLUDED.high,
+                            low = EXCLUDED.low,
+                            close = EXCLUDED.close,
+                            updated_at = NOW()
+                    """, rows)
+                    
+                    logger.info(f"✅ Upserted {len(candles_data)} candles for {ticker} {timeframe}")
+                    
+        except Exception as e:
+            logger.error(f"❌ Failed to upsert candles for {ticker} {timeframe}: {e}")
+            raise
 
 
-# Global instance
 db = DatabaseManager()

@@ -2,6 +2,7 @@ import logging
 import requests
 import time
 from pydantic import BaseModel
+import pandas as pd
 from datetime import datetime, timedelta
 from pandas import DataFrame, concat
 from zoneinfo import ZoneInfo
@@ -39,27 +40,42 @@ def fetch_data(source: str, ticker: str, timeframe: str, start_date: str = ''):
     for d in dates:
         if source == "tiingo":
             tmp_df = get_hist_price_from_tiingo(ticker, timeframe, d.start_date, d.end_date)
+            if tmp_df.empty:
+                logging.warning(f"\tNo data fetched for {ticker} {timeframe} from {d.start_date} to {d.end_date}")
+                continue
+            logging.info(f"\tFetched {len(tmp_df)} rows for {ticker} {timeframe} from {d.start_date} to {d.end_date}")
+            
+            # Process dataframe
+            tmp_df.rename(columns={"date": "timestamp"}, inplace=True)
+            tmp_df = tmp_df.sort_values("timestamp").reset_index(drop=True)
+            tmp_df['timestamp'] = pd.to_datetime(tmp_df['timestamp']).dt.tz_convert(UTC)
+
+            # Save each chunk
+            tmp_df.to_csv(f"data/{source}_{ticker}_{timeframe}_{d.start_date}_{d.end_date}.csv", index=False)
+
             dfs.append(tmp_df)
-            time.sleep(1)
-    df = concat(dfs, ignore_index=True)
-    df.to_csv(f"data/{source}_{ticker}_{timeframe}.csv", index=False)
-    logging.info(f"Data saved to data/{source}_{ticker}_{timeframe}.csv")
+            time.sleep(5)
+        else:
+            raise ValueError(f"Invalid source: {source}!")
+    # df = concat(dfs, ignore_index=True)
+    # df = df.sort_values("timestamp").reset_index(drop=True)
+    # df.to_csv(f"data/{source}_{ticker}_{timeframe}.csv", index=False)
+    # logging.info(f"Data saved to data/{source}_{ticker}_{timeframe}.csv")
 
 
-def get_hist_price_from_tiingo(ticker: str, timeframe: str, start_date: str, end_date: str):
+def get_hist_price_from_tiingo(ticker: str, timeframe: str, start_date: str, end_date: str) -> list:
     logging.info(f"\tFetching <{ticker} | {timeframe}> from {start_date} to {end_date}")
     url = f"https://api.tiingo.com/tiingo/fx/{ticker}/prices?startDate={start_date}&endDate={end_date}&resampleFreq={timeframe}&token={API_KEY_TIINGO}"
-    logging.debug(url)
     try:
         res = requests.get(url)
         res.raise_for_status()
         data = res.json()
         if not data or 'date' not in data[0]:
-            raise ValueError("No valid data returned from the API.")
-        return DataFrame(data)
+            raise ValueError(f"No valid data returned from the API for {ticker} {timeframe} from {start_date} to {end_date}!")
+        return data
     except Exception as e:
         logging.error(f"Failed to fetch data: {e}", exc_info=True)
-        return DataFrame()
+        return []
 
 
 def get_n_days(source: str, timeframe: str) -> int:

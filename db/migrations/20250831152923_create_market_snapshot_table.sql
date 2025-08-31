@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS market_snapshot (
     close DECIMAL(12, 5) NOT NULL,
     volume BIGINT DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(ticker, timeframe, timestamp)
 );
 
 -- migrate:down
