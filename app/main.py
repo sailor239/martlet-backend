@@ -49,7 +49,7 @@ async def home():
         </head>
         <body>
             <h1>Welcome to Martlet Backend Service</h1>
-            <p>Use the <a href="/candles">/candles</a> endpoint to see the data.</p>
+            <p>Use the <a href="/candles/xauusd">/candles</a> endpoint to see the data.</p>
         </body>
     </html>
     """
@@ -58,3 +58,30 @@ async def home():
 @app.get("/candles")
 async def get_candle_data():
     return await db.fetch_all_data()
+
+@app.get("/candles/{ticker}")
+async def get_ticker_candles(ticker: str):
+    """Get candles for a specific ticker"""
+    async with db.pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM market_snapshot WHERE ticker = $1 ORDER BY timestamp DESC LIMIT 100",
+            ticker
+        )
+        return [dict(row) for row in rows]
+
+@app.get("/status")
+async def get_status():
+    """Get system status"""
+    try:
+        # Test database connection
+        async with db.pool.acquire() as conn:
+            await conn.fetchval("SELECT 1")
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+    
+    return {
+        "database": db_status,
+        "scheduler": "running" if scheduler_service.is_running else "stopped",
+        "jobs": len(scheduler_service.get_jobs())
+    }
