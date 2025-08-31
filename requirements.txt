@@ -5,3 +5,5 @@ aiohttp
 python-dotenv
 pandas
 requests
+APScheduler
+httpx
