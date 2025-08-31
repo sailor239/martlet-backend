@@ -1,22 +1,27 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
-from app.db import init_db_pool, fetch_all_data
+from app.db import db
 from app.db_init import init_db_with_csv
 from fastapi.middleware.cors import CORSMiddleware
-from app.utils.data_pipeline_utils import fetch_data
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("🚀 Starting lifespan")
     try:
-        await init_db_pool()
-        # fetch_data("tiingo", "xauusd", "5min", "2025-06-01")
+        await db.connect()
         # await init_db_with_csv()
     except Exception as e:
         print(f"❌ Error during startup: {e}")
     yield
+
+    print("🛑 Stopping lifespan")
+    try:
+        await db.disconnect()
+        print("✅ DB disconnected")
+    except Exception as e:
+        print(f"❌ Error during shutdown: {e}")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -44,4 +49,4 @@ async def home():
 
 @app.get("/candles")
 async def get_candle_data():
-    return await fetch_all_data()
+    return await db.fetch_all_data()
