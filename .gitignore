@@ -13,3 +13,5 @@ build
 *.sqlite3
 *.log
 .DS_Store
+scripts/
+data/
