@@ -1,4 +1,6 @@
 import logging
+import json
+from starlette.responses import StreamingResponse
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
@@ -61,19 +63,30 @@ async def get_candle_data():
 
 @app.get("/candles/{ticker}")
 async def get_ticker_candles(ticker: str):
-    """Get candles for a specific ticker"""
-    async with db.pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT * FROM market_snapshot WHERE ticker = $1 ORDER BY timestamp DESC LIMIT 100",
-            ticker
-        )
-        return [dict(row) for row in rows]
+    """Stream candles for a specific ticker (avoids memory spikes)"""
+
+    async def row_stream():
+        async with db.pool.acquire() as conn:
+            async with conn.transaction():
+                async for record in conn.cursor(
+                    """
+                    SELECT timestamp, ticker, timeframe, open, high, low, close
+                    FROM market_snapshot
+                    WHERE ticker = $1
+                    ORDER BY timestamp DESC
+                    LIMIT 100
+                    """,
+                    ticker
+                ):
+                    # yield each row as JSON line
+                    yield json.dumps(dict(record), default=str) + "\n"
+
+    return StreamingResponse(row_stream(), media_type="application/json")
 
 @app.get("/status")
 async def get_status():
     """Get system status"""
     try:
-        # Test database connection
         async with db.pool.acquire() as conn:
             await conn.fetchval("SELECT 1")
         db_status = "connected"
