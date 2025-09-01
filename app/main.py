@@ -7,7 +7,9 @@ from app.db import db
 from app.db_init import init_db_with_csv
 from loguru import logger
 from app.services.scheduler import scheduler_service
+from app.utils.date_utils import get_trading_day_bounds
 from fastapi.middleware.cors import CORSMiddleware
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -60,7 +62,9 @@ async def get_candle_data():
 
 @app.get("/candles/{ticker}")
 async def get_ticker_candles(ticker: str):
-    """Stream candles for a specific ticker (avoids memory spikes)"""
+    """Stream today's trading date candles for a specific ticker"""
+
+    start, end = get_trading_day_bounds()
 
     async def row_stream():
         async with db.pool.acquire() as conn:
@@ -70,12 +74,12 @@ async def get_ticker_candles(ticker: str):
                     SELECT timestamp, ticker, timeframe, open, high, low, close
                     FROM market_snapshot
                     WHERE ticker = $1
+                      AND timestamp >= $2
+                      AND timestamp <= $3
                     ORDER BY timestamp DESC
-                    LIMIT 100
                     """,
-                    ticker
+                    ticker, start, end
                 ):
-                    # yield each row as JSON line
                     yield json.dumps(dict(record), default=str) + "\n"
 
     return StreamingResponse(row_stream(), media_type="application/json")
