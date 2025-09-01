@@ -1,10 +1,9 @@
-import logging
 import asyncpg
+from loguru import logger
 from typing import Optional
 from datetime import datetime
 from app.config import DATABASE_URL
 
-logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self):

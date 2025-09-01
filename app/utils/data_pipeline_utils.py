@@ -1,22 +1,16 @@
-import logging
 import httpx
 import time
+from loguru import logger
 from pydantic import BaseModel
 import pandas as pd
 from datetime import datetime, timedelta
 from pandas import concat
 from zoneinfo import ZoneInfo
 from app.config import (
-    TS_FORMAT, LOGGING_LEVEL, LOGGING_FORMAT, LOGGING_DATE_FORMAT
+    TS_FORMAT
 )
 from app.constants import (
     UTC, API_KEY_TIINGO
-)
-
-logging.basicConfig(
-    level=LOGGING_LEVEL,
-    format=LOGGING_FORMAT,
-    datefmt=LOGGING_DATE_FORMAT
 )
 
 
@@ -34,16 +28,16 @@ def round_down_to_n_mins(dt: datetime, n: int) -> datetime:
 
 
 async def fetch_data(source: str, ticker: str, timeframe: str, start_date: str = ''):
-    logging.info(f'Fetching data from {source}')
+    logger.info(f'Fetching data from {source}')
     dates = get_all_dates(source, start_date, timeframe)
     dfs = []
     for d in dates:
         if source == "tiingo":
             records = await get_hist_price_from_tiingo(ticker, timeframe, d.start_date, d.end_date)
             if not records:
-                logging.warning(f"\tNo data fetched for {ticker} {timeframe} from {d.start_date} to {d.end_date}")
+                logger.warning(f"\tNo data fetched for {ticker} {timeframe} from {d.start_date} to {d.end_date}")
                 continue
-            logging.info(f"\tFetched {len(records)} rows for {ticker} {timeframe} from {d.start_date} to {d.end_date}")
+            logger.info(f"\tFetched {len(records)} rows for {ticker} {timeframe} from {d.start_date} to {d.end_date}")
             
             # Process dataframe
             tmp_df = pd.DataFrame.from_records(records)
@@ -61,11 +55,11 @@ async def fetch_data(source: str, ticker: str, timeframe: str, start_date: str =
     # df = concat(dfs, ignore_index=True)
     # df = df.sort_values("timestamp").reset_index(drop=True)
     # df.to_csv(f"data/{source}_{ticker}_{timeframe}.csv", index=False)
-    # logging.info(f"Data saved to data/{source}_{ticker}_{timeframe}.csv")
+    # logger.info(f"Data saved to data/{source}_{ticker}_{timeframe}.csv")
 
 
 async def get_hist_price_from_tiingo(ticker: str, timeframe: str, start_date: str, end_date: str) -> list:
-    logging.info(f"\tFetching <{ticker} | {timeframe}> from {start_date} to {end_date}")
+    logger.info(f"\tFetching <{ticker} | {timeframe}> from {start_date} to {end_date}")
     url = (
         f"https://api.tiingo.com/tiingo/fx/{ticker}/prices"
         f"?startDate={start_date}&endDate={end_date}"
@@ -83,7 +77,7 @@ async def get_hist_price_from_tiingo(ticker: str, timeframe: str, start_date: st
                 )
             return data
     except Exception as e:
-        logging.error(f"Failed to fetch data: {e}", exc_info=True)
+        logger.error(f"Failed to fetch data: {e}", exc_info=True)
         return []
 
 

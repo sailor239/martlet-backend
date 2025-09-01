@@ -1,5 +1,4 @@
 import os
-import logging
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,7 +17,3 @@ TS_FORMAT = {
     "tiingo": DATE_FORMAT,
     "tradermade": DATE_TIME_FORMAT_TRADERMADE
 }
-
-LOGGING_LEVEL = logging.INFO
-LOGGING_FORMAT = '%(asctime)s | %(levelname)s | %(module)s:%(funcName)s:%(lineno)d - %(message)s'
-LOGGING_DATE_FORMAT = DATE_TIME_FORMAT

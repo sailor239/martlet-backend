@@ -1,4 +1,3 @@
-import logging
 import json
 from starlette.responses import StreamingResponse
 from fastapi import FastAPI
@@ -6,11 +5,9 @@ from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
 from app.db import db
 from app.db_init import init_db_with_csv
+from loguru import logger
 from app.services.scheduler import scheduler_service
 from fastapi.middleware.cors import CORSMiddleware
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

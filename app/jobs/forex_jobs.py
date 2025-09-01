@@ -1,9 +1,8 @@
-import logging
+from loguru import logger
 from app.db import db
 from datetime import datetime, timezone
 from app.utils.data_pipeline_utils import get_hist_price_from_tiingo
 
-logger = logging.getLogger(__name__)
 
 async def sync_forex_data(ticker: str, timeframe: str):
     """Scheduled job to sync forex data from external API"""
@@ -32,7 +31,7 @@ async def sync_forex_data(ticker: str, timeframe: str):
                 if processed_records:
                     await db.upsert_candles(ticker, timeframe, processed_records)
                 else:
-                    logging.info("⚡ No new records to insert")
+                    logger.info("⚡ No new records to insert")
         else:
             logger.info(f"Something went wrong, as there is no existing data for {ticker} {timeframe}. Please check the initial data load process.")
         

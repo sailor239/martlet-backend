@@ -1,9 +1,8 @@
 fastapi
 uvicorn[standard]
 asyncpg
-aiohttp
 python-dotenv
 pandas
-requests
 APScheduler
 httpx
+loguru

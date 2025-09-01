@@ -1,8 +1,7 @@
-import logging
+from loguru import logger
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-logger = logging.getLogger(__name__)
 
 class SchedulerService:
     def __init__(self):
