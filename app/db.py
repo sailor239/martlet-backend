@@ -18,14 +18,14 @@ class DatabaseManager:
                 min_size=1,
                 max_size=10
             )
-            print("✅ DB pool initialized")
+            logger.info("✅ DB pool initialized")
     
     async def disconnect(self):
         """Close database connection pool"""
         if self._pool:
             await self._pool.close()
             self._pool = None
-            print("✅ DB pool closed")
+            logger.info("✅ DB pool closed")
     
     @property
     def pool(self) -> asyncpg.Pool:

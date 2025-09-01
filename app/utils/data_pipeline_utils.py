@@ -1,10 +1,10 @@
 import logging
-import requests
+import httpx
 import time
 from pydantic import BaseModel
 import pandas as pd
 from datetime import datetime, timedelta
-from pandas import DataFrame, concat
+from pandas import concat
 from zoneinfo import ZoneInfo
 from app.config import (
     TS_FORMAT, LOGGING_LEVEL, LOGGING_FORMAT, LOGGING_DATE_FORMAT
@@ -33,19 +33,20 @@ def round_down_to_n_mins(dt: datetime, n: int) -> datetime:
     )
 
 
-def fetch_data(source: str, ticker: str, timeframe: str, start_date: str = ''):
+async def fetch_data(source: str, ticker: str, timeframe: str, start_date: str = ''):
     logging.info(f'Fetching data from {source}')
     dates = get_all_dates(source, start_date, timeframe)
     dfs = []
     for d in dates:
         if source == "tiingo":
-            tmp_df = get_hist_price_from_tiingo(ticker, timeframe, d.start_date, d.end_date)
-            if tmp_df.empty:
+            records = await get_hist_price_from_tiingo(ticker, timeframe, d.start_date, d.end_date)
+            if not records:
                 logging.warning(f"\tNo data fetched for {ticker} {timeframe} from {d.start_date} to {d.end_date}")
                 continue
-            logging.info(f"\tFetched {len(tmp_df)} rows for {ticker} {timeframe} from {d.start_date} to {d.end_date}")
+            logging.info(f"\tFetched {len(records)} rows for {ticker} {timeframe} from {d.start_date} to {d.end_date}")
             
             # Process dataframe
+            tmp_df = pd.DataFrame.from_records(records)
             tmp_df.rename(columns={"date": "timestamp"}, inplace=True)
             tmp_df = tmp_df.sort_values("timestamp").reset_index(drop=True)
             tmp_df['timestamp'] = pd.to_datetime(tmp_df['timestamp']).dt.tz_convert(UTC)
@@ -63,16 +64,24 @@ def fetch_data(source: str, ticker: str, timeframe: str, start_date: str = ''):
     # logging.info(f"Data saved to data/{source}_{ticker}_{timeframe}.csv")
 
 
-def get_hist_price_from_tiingo(ticker: str, timeframe: str, start_date: str, end_date: str) -> list:
+async def get_hist_price_from_tiingo(ticker: str, timeframe: str, start_date: str, end_date: str) -> list:
     logging.info(f"\tFetching <{ticker} | {timeframe}> from {start_date} to {end_date}")
-    url = f"https://api.tiingo.com/tiingo/fx/{ticker}/prices?startDate={start_date}&endDate={end_date}&resampleFreq={timeframe}&token={API_KEY_TIINGO}"
+    url = (
+        f"https://api.tiingo.com/tiingo/fx/{ticker}/prices"
+        f"?startDate={start_date}&endDate={end_date}"
+        f"&resampleFreq={timeframe}&token={API_KEY_TIINGO}"
+    )
     try:
-        res = requests.get(url)
-        res.raise_for_status()
-        data = res.json()
-        if not data or 'date' not in data[0]:
-            raise ValueError(f"No valid data returned from the API for {ticker} {timeframe} from {start_date} to {end_date}!")
-        return data
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            res = await client.get(url)
+            res.raise_for_status()
+            data = res.json()
+            if not data or "date" not in data[0]:
+                raise ValueError(
+                    f"No valid data returned from API for {ticker} {timeframe} "
+                    f"from {start_date} to {end_date}!"
+                )
+            return data
     except Exception as e:
         logging.error(f"Failed to fetch data: {e}", exc_info=True)
         return []

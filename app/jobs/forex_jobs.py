@@ -15,7 +15,7 @@ async def sync_forex_data(ticker: str, timeframe: str):
             logger.info(f"Last candle timestamp for {ticker} {timeframe}: {last_ts}")
             start_date = last_ts.strftime("%Y-%m-%d")
             end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            raw_data = get_hist_price_from_tiingo(ticker, timeframe, start_date, end_date)
+            raw_data = await get_hist_price_from_tiingo(ticker, timeframe, start_date, end_date)
             if raw_data:
                 processed_records = []
                 for record in raw_data:
@@ -27,13 +27,16 @@ async def sync_forex_data(ticker: str, timeframe: str):
                         'close': record['close'],
                     }
                     processed_records.append(processed_record)
+                
                 processed_records = [r for r in processed_records if r['timestamp'] >= last_ts]
-                await db.upsert_candles(ticker, timeframe, processed_records)
+                if processed_records:
+                    await db.upsert_candles(ticker, timeframe, processed_records)
+                else:
+                    logging.info("⚡ No new records to insert")
         else:
-            logger.info(f"No existing data for {ticker} {timeframe}, starting fresh")
-        
+            logger.info(f"Something went wrong, as there is no existing data for {ticker} {timeframe}. Please check the initial data load process.")
         
         logger.info(f"✅ Completed forex sync for {ticker} {timeframe}")
         
     except Exception as e:
-        logger.error(f"❌ Forex sync failed for {ticker}: {e}")
+        logger.error(f"❌ Forex sync failed for {ticker}: {e}, exc_info=True")
