@@ -7,8 +7,11 @@ from app.db import db
 from app.db_init import init_db_with_csv
 from loguru import logger
 from app.services.scheduler import scheduler_service
-from app.utils.date_utils import get_trading_day_bounds
+from app.utils.date_utils import get_trading_date
+from app.models import CandleRequest
 from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 
 @asynccontextmanager
@@ -60,27 +63,53 @@ async def home():
 async def get_candle_data():
     return await db.fetch_all_data()
 
-@app.get("/candles/{ticker}")
-async def get_ticker_candles(ticker: str):
-    """Stream today's trading date candles for a specific ticker"""
+@app.post("/candles/")
+async def get_ticker_candles(payload: CandleRequest):
+    """Stream today's trading date candles with derived trading_date column."""
 
-    start, end = get_trading_day_bounds()
+    ticker = payload.ticker
+    timeframe = payload.timeframe
+
+    # now_utc = datetime.now(timezone.utc)
 
     async def row_stream():
         async with db.pool.acquire() as conn:
-            async with conn.transaction():
-                async for record in conn.cursor(
-                    """
+            rows = await conn.fetch(
+                """
+                SELECT *
+                FROM (
                     SELECT timestamp, ticker, timeframe, open, high, low, close
                     FROM market_snapshot
-                    WHERE ticker = $1
-                      AND timestamp >= $2
-                      AND timestamp <= $3
+                    WHERE ticker = $1 AND timeframe = $2
                     ORDER BY timestamp DESC
-                    """,
-                    ticker, start, end
-                ):
-                    yield json.dumps(dict(record), default=str) + "\n"
+                    LIMIT 500
+                ) sub
+                ORDER BY timestamp ASC
+                """,
+                ticker, timeframe
+            )
+
+        if not rows:
+            return
+        
+        # Find latest trading date in the rows
+        latest_trading_date = max(get_trading_date(r["timestamp"]) for r in rows)
+
+        # Yield rows matching latest trading date
+        for record in rows:
+            trading_date = get_trading_date(record["timestamp"])
+            if trading_date != latest_trading_date:
+                continue
+
+            row = dict(record)
+            row["trading_date"] = trading_date
+
+            ts_utc = row["timestamp"]
+            if ts_utc.tzinfo is None:
+                ts_utc = ts_utc.replace(tzinfo=timezone.utc)
+            row["timestamp_sgt"] = ts_utc.astimezone(ZoneInfo("Asia/Singapore"))
+
+            yield json.dumps(row, default=str) + "\n"
 
     return StreamingResponse(row_stream(), media_type="application/json")
 
