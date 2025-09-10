@@ -2,6 +2,7 @@ import asyncpg
 from loguru import logger
 from typing import Optional
 from datetime import datetime
+import pandas as pd
 from app.config import DATABASE_URL
 
 
@@ -49,6 +50,32 @@ class DatabaseManager:
             )
             return result['last_timestamp'] if result and result['last_timestamp'] else None
     
+    async def get_recent_candles(self, ticker: str, timeframe: str, limit: int = 1000):
+        cols = [
+            "ticker", "timeframe", "timestamp", "open", "high", "low", "close",
+            "trading_date", "ema20", "prev_day_high", "prev_day_low", "prev2_day_high", "prev2_day_low"
+        ]
+        async with self.pool.acquire() as conn:
+            query = f"""
+            SELECT {', '.join(cols)}
+            FROM market_snapshot
+            WHERE ticker = $1 AND timeframe = $2
+            ORDER BY timestamp DESC
+            LIMIT {limit}
+            """
+            rows = await conn.fetch(query, ticker, timeframe)
+
+            if not rows:
+                return pd.DataFrame(columns=cols)
+
+            # reverse to chronological order
+            rows = list(reversed(rows))
+
+            df = pd.DataFrame([dict(r) for r in rows])
+            df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+            return df.reset_index(drop=True)
+            # return [dict(r) for r in reversed(rows)]
+    
     async def upsert_candles(self, ticker: str, timeframe: str, candles_data: list):
         if not candles_data:
             logger.warning(f"No candles data provided for {ticker} {timeframe}")
@@ -57,23 +84,39 @@ class DatabaseManager:
         try:
             async with self.pool.acquire() as conn:
                 async with conn.transaction():
-                    rows = [
-                        (ticker, candle['timestamp'], timeframe, 
-                        float(candle['open']), float(candle['high']), 
-                        float(candle['low']), float(candle['close']), 
-                        )
-                        for candle in candles_data
-                    ]
+
+                    rows = []
+                    for candle in candles_data:
+                        ts = candle["timestamp"]
+                        o = float(candle["open"])
+                        h = float(candle["high"])
+                        l = float(candle["low"])
+                        c = float(candle["close"])
+                        trading_date = candle.get("trading_date")
+                        ema20 = candle.get("ema20")
+                        prev_day_high = candle.get("prev_day_high")
+                        prev_day_low = candle.get("prev_day_low")
+                        prev2_day_high = candle.get("prev2_day_high")
+                        prev2_day_low = candle.get("prev2_day_low")
+
+                        rows.append((ticker, ts, timeframe, o, h, l, c, trading_date, ema20, prev_day_high, prev_day_low, prev2_day_high, prev2_day_low))
                     
-                    result = await conn.executemany("""
-                        INSERT INTO market_snapshot (ticker, timestamp, timeframe, open, high, low, close)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7)
-                        ON CONFLICT (ticker, timeframe, timestamp) 
-                        DO UPDATE SET 
+                    await conn.executemany("""
+                        INSERT INTO market_snapshot
+                            (ticker, timestamp, timeframe, open, high, low, close, trading_date, ema20, prev_day_high, prev_day_low, prev2_day_high, prev2_day_low)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                        ON CONFLICT (ticker, timeframe, timestamp)
+                        DO UPDATE SET
                             open = EXCLUDED.open,
                             high = EXCLUDED.high,
                             low = EXCLUDED.low,
                             close = EXCLUDED.close,
+                            trading_date = EXCLUDED.trading_date,
+                            ema20 = EXCLUDED.ema20,
+                            prev_day_high = EXCLUDED.prev_day_high,
+                            prev_day_low = EXCLUDED.prev_day_low,
+                            prev2_day_high = EXCLUDED.prev2_day_high,
+                            prev2_day_low = EXCLUDED.prev2_day_low,
                             updated_at = NOW()
                     """, rows)
                     

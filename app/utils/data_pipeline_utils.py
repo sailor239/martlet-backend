@@ -75,6 +75,7 @@ async def get_hist_price_from_tiingo(ticker: str, timeframe: str, start_date: st
                     f"No valid data returned from API for {ticker} {timeframe} "
                     f"from {start_date} to {end_date}!"
                 )
+            logger.info(f"Fetched {len(data)} records from Tiingo")
             return data
     except Exception as e:
         logger.error(f"Failed to fetch data: {e}", exc_info=True)

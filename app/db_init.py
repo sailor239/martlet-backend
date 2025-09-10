@@ -1,13 +1,16 @@
-import csv
 import asyncpg
 import asyncio
-from datetime import datetime
+import pandas as pd
 from app.config import DATABASE_URL, CSV_PATH
+from app.utils.date_utils import get_trading_date, add_prev_days_high_and_low
 
 
 INSERT_ROW_SQL = """
-INSERT INTO market_snapshot (timestamp, ticker, timeframe, open, high, low, close)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO market_snapshot (
+    timestamp, ticker, timeframe, open, high, low, close,
+    trading_date, ema20, prev_day_high, prev_day_low, prev2_day_high, prev2_day_low
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 """
 TIMEFRAME = "5min"
 
@@ -19,55 +22,57 @@ async def init_db_with_csv():
         conn = await asyncpg.connect(DATABASE_URL)
         await conn.execute("DELETE FROM market_snapshot")  # optional: clear table
 
-        with open(CSV_PATH, newline="") as csvfile:
-            reader = csv.DictReader(csvfile)
-            rows = []
-            processed_count = 0
-            error_count = 0
-
-            for row in reader:
-                try:
-                    timestamp_str = row["timestamp"]
-                    # timestamp_str = row["date"].rstrip("Z") # Parse ISO8601 timestamp (remove 'Z' if present)
-                    timestamp_dt = datetime.fromisoformat(timestamp_str)
-                    # timestamp_dt = datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M")    # For data from forexsb
-                    rows.append((
-                        timestamp_dt,
-                        row["ticker"],
-                        TIMEFRAME,
-                        float(row["open"]),
-                        float(row["high"]),
-                        float(row["low"]),
-                        float(row["close"]),
-                    ))
-                    processed_count += 1
-
-                    # Progress indicator for large files
-                    if processed_count % 1000 == 0:
-                        print(f"📊 Processed {processed_count} rows...")
-                    
-                except Exception as row_err:
-                    error_count += 1
-                    print(f"⚠️ Skipping bad row {processed_count + error_count}: {row} -> {row_err}")
+        # --- Step 1: Load CSV into DataFrame ---
+        df = pd.read_csv(CSV_PATH, parse_dates=["timestamp"])
+        df = df.sort_values("timestamp").reset_index(drop=True)
         
-        print(f"✅ Finished processing CSV. Total valid rows: {processed_count}, Errors: {error_count}")
+        # --- Step 2: Compute derived features ---
+        df["timeframe"] = TIMEFRAME
+        df["trading_date"] = df["timestamp"].apply(get_trading_date)
+        df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
+        df = add_prev_days_high_and_low(df)
 
-        # Use executemany to insert all at once (faster & more reliable)
+        # Replace NaNs with None for asyncpg
+        df = df.where(pd.notna(df), None)
+
+        # df.to_csv("debug_processed.csv", index=False)  # for debugging
+
+        # --- Step 3: Prepare rows for insertion ---
+        rows = [
+            (
+                row.timestamp,
+                row.ticker,
+                row.timeframe,
+                row.open,
+                row.high,
+                row.low,
+                row.close,
+                row.trading_date,
+                row.ema20,
+                row.prev_day_high,
+                row.prev_day_low,
+                row.prev2_day_high,
+                row.prev2_day_low
+            )
+            for row in df.itertuples(index=False)
+        ]
+
+        # --- Step 4: Insert into DB ---
         if rows:
             await conn.executemany(INSERT_ROW_SQL, rows)
             print(f"✅ Inserted {len(rows)} rows into database")
         else:
             print("⚠️ No valid rows to insert")
 
-        await conn.close()
-        print("✅ Database initialization from CSV completed successfully!")
+        print("✅ DB init from CSV completed successfully!")
 
     except Exception as e:
-        print(f"❌ DB init failed: {e}")
+        print(f"❌ DB init from CSV failed: {e}")
     
     finally:
-        if conn is not None:
+        if conn:
             await conn.close()
+            print("✅ DB connection closed")
 
 
 if __name__ == "__main__":
