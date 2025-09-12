@@ -67,6 +67,7 @@ async def get_ticker_candles(payload: CandleRequest):
 
     ticker = payload.ticker
     timeframe = payload.timeframe
+    trading_date = payload.trading_date
 
     # now_utc = datetime.now(timezone.utc)
 
@@ -78,23 +79,22 @@ async def get_ticker_candles(payload: CandleRequest):
                 FROM (
                     SELECT timestamp, ticker, timeframe, open, high, low, close, trading_date, ema20, prev_day_high, prev_day_low
                     FROM market_snapshot
-                    WHERE ticker = $1 AND timeframe = $2
+                    WHERE ticker = $1 AND timeframe = $2 AND trading_date = $3
                     ORDER BY timestamp DESC
-                    LIMIT 500
                 ) sub
                 ORDER BY timestamp ASC
                 """,
-                ticker, timeframe
+                ticker, timeframe, trading_date
             )
 
         if not rows:
             return
         
-        latest_trading_date = max([r["trading_date"] for r in rows])
-        latest_rows = [r for r in rows if r["trading_date"] == latest_trading_date]
+        # latest_trading_date = max([r["trading_date"] for r in rows])
+        # latest_rows = [r for r in rows if r["trading_date"] == latest_trading_date]
 
         # Yield rows matching latest latest_trading_date
-        for record in latest_rows:
+        for record in rows:
             row = dict(record)
 
             ts_utc = row["timestamp"]
