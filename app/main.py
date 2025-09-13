@@ -1,6 +1,6 @@
 import json
 from starlette.responses import StreamingResponse
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
 from app.db import db
@@ -60,6 +60,45 @@ async def home():
 # @app.get("/candles")
 # async def get_candle_data():
 #     return await db.fetch_all_data()
+
+@app.post("/intraday/")
+async def fetch_intraday_data(payload: CandleRequest):
+    """Return intraday data for a given ticker, timeframe and trading_date"""
+
+    ticker = payload.ticker
+    timeframe = payload.timeframe
+    trading_date = payload.trading_date
+
+    INTRADAY_TIMEFRAMES = {"5min"}
+
+    if timeframe not in INTRADAY_TIMEFRAMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Timeframe '{timeframe}' is not supported. Allowed: {INTRADAY_TIMEFRAMES}"
+        )
+    
+    async with db.pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT timestamp, ticker, timeframe, open, high, low, close, trading_date, ema20, prev_day_high, prev_day_low
+            FROM market_snapshot
+            WHERE ticker = $1 AND timeframe = $2 AND trading_date = $3
+            ORDER BY timestamp ASC
+            """,
+            ticker, timeframe, trading_date
+        )
+
+    result = []
+    for record in rows:
+        row = dict(record)
+        ts_utc = row["timestamp"]
+        if ts_utc.tzinfo is None:
+            ts_utc = ts_utc.replace(tzinfo=timezone.utc)
+        row["timestamp_sgt"] = ts_utc.astimezone(ZoneInfo("Asia/Singapore"))
+        result.append(row)
+
+    return result
+
 
 @app.post("/candles/")
 async def get_ticker_candles(payload: CandleRequest):
