@@ -1,16 +1,18 @@
 import json
 from starlette.responses import StreamingResponse
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
 from app.db import db
 from app.db_init import init_db_with_csv
 from loguru import logger
 from app.services.scheduler import scheduler_service
-from app.models import CandleRequest
+from app.models import CandleRequest, Trade, TradeCreate, BacktestRequest, BacktestResult
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import timezone
+from datetime import datetime, timezone, timedelta
+import random
 from zoneinfo import ZoneInfo
+from typing import Literal, cast
 
 
 @asynccontextmanager
@@ -98,6 +100,82 @@ async def fetch_intraday_data(payload: CandleRequest):
         result.append(row)
 
     return result
+
+
+dummy_trades: list[Trade] = [
+    Trade(
+        id=1,
+        ticker="xauusd",
+        direction="long",
+        entry_price=3612.23,
+        exit_price=3616.89,
+        size=0.20,
+        entry_time=datetime(2025, 9, 10, 9, 30),
+        exit_time=datetime(2025, 9, 10, 14, 30),
+        notes="Scalped after breakout",
+        created_at=datetime(2025, 9, 10, 14, 30),
+    ),
+    Trade(
+        id=2,
+        ticker="xauusd",
+        direction="short",
+        entry_price=3657.11,
+        exit_price=3658.34,
+        size=0.20,
+        entry_time=datetime(2025, 9, 11, 9, 45),
+        exit_time=datetime(2025, 9, 11, 10, 15),
+        notes="Fade at resistance",
+        created_at=datetime(2025, 9, 11, 10, 15),
+    ),
+]
+@app.get("/trades/", response_model=list[Trade])
+def get_trades():
+    return dummy_trades
+
+
+@app.post("/trades/")
+async def create_trade(trade: TradeCreate):
+    # Create the full Trade object (with id, created_at)
+    new_trade = {
+        "id": 1,  # in real scenario, generate from DB
+        **trade.model_dump(),
+        "created_at": datetime.now(timezone.utc),
+    }
+
+    # Save to DB here (dummy example)
+    print("New trade to save:", new_trade)
+
+    return new_trade
+
+@app.post("/backtest/", response_model=list[BacktestResult])
+async def run_backtest(req: BacktestRequest):
+    """
+    Dummy backtest endpoint.
+    Returns synthetic equity curve & trades for a given ticker/timeframe.
+    """
+
+    # Generate synthetic data
+    start_time = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    results = []
+    equity = 10000.0  # starting equity
+    position = "flat"
+
+    for i in range(50):  # 50 candles
+        ts = start_time + timedelta(minutes=i * 5)
+        pnl = random.uniform(-50, 50)
+        equity += pnl
+        position = cast(Literal["long", "short", "flat"], random.choice(["long", "short", "flat"]))
+
+        results.append(
+            BacktestResult(
+                timestamp=ts,
+                equity=equity,
+                position=position,
+                pnl=pnl,
+            )
+        )
+
+    return results
 
 
 @app.post("/candles/")
