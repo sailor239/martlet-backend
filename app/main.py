@@ -102,50 +102,31 @@ async def fetch_intraday_data(payload: CandleRequest):
     return result
 
 
-dummy_trades: list[Trade] = [
-    Trade(
-        id=1,
-        ticker="xauusd",
-        direction="long",
-        entry_price=3612.23,
-        exit_price=3616.89,
-        size=0.20,
-        entry_time=datetime(2025, 9, 10, 9, 30),
-        exit_time=datetime(2025, 9, 10, 14, 30),
-        notes="Scalped after breakout",
-        created_at=datetime(2025, 9, 10, 14, 30),
-    ),
-    Trade(
-        id=2,
-        ticker="xauusd",
-        direction="short",
-        entry_price=3657.11,
-        exit_price=3658.34,
-        size=0.20,
-        entry_time=datetime(2025, 9, 11, 9, 45),
-        exit_time=datetime(2025, 9, 11, 10, 15),
-        notes="Fade at resistance",
-        created_at=datetime(2025, 9, 11, 10, 15),
-    ),
-]
 @app.get("/trades/", response_model=list[Trade])
-def get_trades():
-    return dummy_trades
+async def list_trades(limit: int = 100):
+    """Return recent trades, most recent first"""
+    trades = await db.list_trades(limit=limit)
+    return trades
 
 
 @app.post("/trades/")
 async def create_trade(trade: TradeCreate):
-    # Create the full Trade object (with id, created_at)
-    new_trade = {
-        "id": 1,  # in real scenario, generate from DB
-        **trade.model_dump(),
-        "created_at": datetime.now(timezone.utc),
-    }
-
-    # Save to DB here (dummy example)
-    print("New trade to save:", new_trade)
+    try:
+        new_trade = await db.create_trade(trade.model_dump())
+        return new_trade
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB error: {e}")
 
     return new_trade
+
+
+@app.delete("/trades/{trade_id}", status_code=204)
+async def delete_trade(trade_id: int):
+    deleted = await db.delete_trade(trade_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    return
+
 
 @app.post("/backtest/", response_model=list[BacktestResult])
 async def run_backtest(req: BacktestRequest):
@@ -155,7 +136,7 @@ async def run_backtest(req: BacktestRequest):
     """
 
     # Generate synthetic data
-    start_time = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    start_time = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     results = []
     equity = 10000.0  # starting equity
     position = "flat"
