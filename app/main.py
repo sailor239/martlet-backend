@@ -102,6 +102,46 @@ async def fetch_intraday_data(payload: CandleRequest):
     return result
 
 
+@app.get("/trades/{ticker}/{trading_date}")
+async def fetch_trades(ticker: str, trading_date: str):
+    print(f"Fetching trades for {ticker} on {trading_date}")
+
+    # Parse trading_date string to a date object
+    try:
+        trading_date_obj = datetime.strptime(trading_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid trading_date format. Use YYYY-MM-DD.")
+
+    async with db.pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, direction, entry_price, exit_price, entry_time, exit_time, size, notes
+            FROM trades
+            WHERE ticker = $1
+              AND DATE(entry_time AT TIME ZONE 'Asia/Singapore') = $2
+            ORDER BY entry_time ASC
+            """,
+            ticker, trading_date_obj
+        )
+
+    trades = []
+    for r in rows:
+        trade = dict(r)
+
+        # Convert to SGT
+        for key in ["entry_time", "exit_time"]:
+            ts = trade.get(key)
+            if ts:
+                # Ensure UTC
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                trade[key] = ts.astimezone(ZoneInfo("Asia/Singapore")).isoformat()
+
+        trades.append(trade)
+
+    return trades
+
+
 @app.get("/trades/", response_model=list[Trade])
 async def list_trades(limit: int = 100):
     """Return recent trades, most recent first"""
