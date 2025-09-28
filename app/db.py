@@ -34,11 +34,18 @@ class DatabaseManager:
             raise RuntimeError("Database not connected. Call connect() first.")
         return self._pool
     
-    async def fetch_all_data(self):
+    async def fetch_market_snapshot_by_ticker_by_timeframe(self, ticker: str, timeframe: str, limit: int | None = None):
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT ticker, timeframe, timestamp, open, high, low, close FROM market_snapshot ORDER BY timestamp"
-            )
+            if limit is not None:
+                rows = await conn.fetch(
+                    "SELECT * FROM market_snapshot WHERE ticker = $1 AND timeframe = $2 ORDER BY timestamp LIMIT $3",
+                    ticker, timeframe, limit
+                )
+            else:
+                rows = await conn.fetch(
+                    "SELECT * FROM market_snapshot WHERE ticker = $1 AND timeframe = $2 ORDER BY timestamp",
+                    ticker, timeframe
+                )
             return [dict(row) for row in rows]
     
     async def get_last_candle_timestamp(self, ticker: str, timeframe: str) -> datetime | None:
@@ -178,6 +185,68 @@ class DatabaseManager:
             # asyncpg returns 'DELETE <n>', extract <n>
             deleted_count = int(result.split(" ")[1])
             return deleted_count > 0
+    
+    async def fetch_backtest_results_by_ticker_by_timeframe(
+        self,
+        ticker: str,
+        timeframe: str,
+        limit: int = 500
+    ):
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT trading_date, equity, pnl
+                FROM backtest_results
+                WHERE ticker = $1 AND timeframe = $2
+                ORDER BY trading_date DESC
+                LIMIT $3
+                """,
+                ticker, timeframe, limit
+            )
+        # Return in chronological order
+        return list(reversed([dict(r) for r in rows]))
+
+    async def save_backtest_results(
+        self,
+        ticker: str,
+        timeframe: str,
+        results: list[dict],
+        # strategy_params: Optional[dict] = None
+    ):
+        """
+        Save backtest results to the database.
+
+        Args:
+            ticker: ticker symbol
+            timeframe: timeframe string
+            results: list of dicts with keys: trading_date, equity, pnl
+            strategy_params: optional dict of strategy parameters
+        """
+        if not results:
+            return
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                rows = []
+                for r in results:
+                    rows.append((
+                        ticker,
+                        timeframe,
+                        r["trading_date"],
+                        r["equity"],
+                        r["pnl"],
+                    ))
+
+                await conn.executemany("""
+                    INSERT INTO backtest_results
+                        (ticker, timeframe, trading_date, equity, pnl)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (ticker, timeframe, trading_date)
+                    DO UPDATE SET
+                        equity = EXCLUDED.equity,
+                        pnl = EXCLUDED.pnl,
+                        created_at = NOW()
+                """, rows)
 
 
 db = DatabaseManager()

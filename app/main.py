@@ -7,12 +7,15 @@ from app.db import db
 from app.db_init import init_db_with_csv
 from loguru import logger
 from app.services.scheduler import scheduler_service
+from app.services.backtest import run_backtest, backtest_settings
+from app.utils.backtest_utils import get_daily_summary
 from app.models import CandleRequest, Trade, TradeCreate, BacktestRequest, BacktestResult
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timezone, timedelta
 import random
 from zoneinfo import ZoneInfo
 from typing import Literal, cast
+from pandas import DataFrame
 
 
 @asynccontextmanager
@@ -59,9 +62,6 @@ async def home():
     """
     return html_content
 
-# @app.get("/candles")
-# async def get_candle_data():
-#     return await db.fetch_all_data()
 
 @app.post("/intraday/")
 async def fetch_intraday_data(payload: CandleRequest):
@@ -104,7 +104,7 @@ async def fetch_intraday_data(payload: CandleRequest):
 
 @app.get("/trades/{ticker}/{trading_date}")
 async def fetch_trades(ticker: str, trading_date: str):
-    print(f"Fetching trades for {ticker} on {trading_date}")
+    logger.info(f"Fetching trades for {ticker} on {trading_date}")
 
     # Parse trading_date string to a date object
     try:
@@ -168,35 +168,46 @@ async def delete_trade(trade_id: int):
     return
 
 
+@app.post("/backtest/{ticker}/{timeframe}/", response_model=list[BacktestResult])
+async def fetch_backtest_results_by_ticker_by_timeframe(ticker: str, timeframe: str) -> list[BacktestResult]:
+    logger.debug(f"Fetching backtest results for {ticker} | {timeframe}")
+    results = await db.fetch_backtest_results_by_ticker_by_timeframe(ticker, timeframe)
+    if not results:
+        raise HTTPException(status_code=404, detail=f'No backtest results found for "{ticker}" and "{timeframe}"')
+    return [
+        BacktestResult(timestamp=r["trading_date"], equity=r["equity"], pnl=r["pnl"])
+        for r in results
+    ]
+
 @app.post("/backtest/", response_model=list[BacktestResult])
-async def run_backtest(req: BacktestRequest):
-    """
-    Dummy backtest endpoint.
-    Returns synthetic equity curve & trades for a given ticker/timeframe.
-    """
+async def backtest(req: BacktestRequest):
+    data = await db.fetch_market_snapshot_by_ticker_by_timeframe(req.ticker, req.timeframe)
+    if not data:
+        raise HTTPException(status_code=404, detail=f'No market data found for "{req.ticker}" and "{req.timeframe}"')
 
-    # Generate synthetic data
-    start_time = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    results = []
-    equity = 10000.0  # starting equity
-    position = "flat"
+    df = DataFrame(data)
+    results = run_backtest(df)
 
-    for i in range(50):  # 50 candles
-        ts = start_time + timedelta(minutes=i * 5)
-        pnl = random.uniform(-50, 50)
-        equity += pnl
-        position = cast(Literal["long", "short", "flat"], random.choice(["long", "short", "flat"]))
+    df_daily_summary, drawdown_periods = get_daily_summary(results, backtest_settings.account.starting_cash)
+    logger.debug(f'Backtest completed for "{req.ticker}" | "{drawdown_periods}"')
+    results_to_save = [
+        {
+            "trading_date": row["trading_date"],
+            "equity": row["equity"],
+            "pnl": row["pnl"],
+        }
+        for _, row in df_daily_summary.iterrows()
+    ]
 
-        results.append(
-            BacktestResult(
-                timestamp=ts,
-                equity=equity,
-                position=position,
-                pnl=pnl,
-            )
-        )
+    await db.save_backtest_results(req.ticker, req.timeframe, results_to_save)
 
-    return results
+    # Return as API response
+    latest_results = results_to_save[-100:]
+
+    return [
+        BacktestResult(timestamp=r["trading_date"], equity=r["equity"], pnl=r["pnl"])
+        for r in latest_results
+    ]
 
 
 @app.post("/candles/")
