@@ -6,3 +6,4 @@ pandas
 APScheduler
 httpx
 loguru
+pydantic_settings
