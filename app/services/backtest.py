@@ -5,10 +5,8 @@ from app.utils.backtest_utils import (
 )
 from loguru import logger
 
-backtest_settings = BacktestSettings()
 
-
-def run_backtest(df: DataFrame, enable_time_filter: bool = backtest_settings.strategy.enable_time_filter) -> DataFrame:
+def run_backtest(df: DataFrame, strategy: str, backtest_settings: BacktestSettings, enable_time_filter: bool = False) -> DataFrame:
     logger.info("Running backtest...")
     df = df.copy()
 
@@ -52,89 +50,158 @@ def run_backtest(df: DataFrame, enable_time_filter: bool = backtest_settings.str
         })
         current_trade = None
 
-    for i in range(1, len(df)):
-        row = df.iloc[i]
-        prev_row = df.iloc[i - 1]
-        # backtest_settings.strategy.take_profit = row['close'] / 50
-        # backtest_settings.strategy.stop_loss = row['close'] / 1600
+    if strategy == "previous_day_breakout":
+        for i in range(1, len(df)):
+            row = df.iloc[i]
+            prev_row = df.iloc[i - 1]
 
-        if current_trade:
-            side = current_trade['side']
-            entry_price = current_trade['entry_price']
+            if current_trade:
+                side = current_trade['side']
+                entry_price = current_trade['entry_price']
 
-            # Exit: take profit / stop loss
-            if side == 'long':
-                if row['low'] <= entry_price - backtest_settings.strategy.stop_loss:
-                    close_trade(entry_price - backtest_settings.strategy.stop_loss, row['timestamp'], 'stop_loss', row)
-                    if backtest_settings.strategy.trade_until_win:
-                        active_day = None
+                # Exit: take profit / stop loss
+                if side == 'long':
+                    if row['low'] <= entry_price - backtest_settings.strategy.stop_loss:
+                        close_trade(entry_price - backtest_settings.strategy.stop_loss, row['timestamp'], 'stop_loss', row)
+                        if backtest_settings.strategy.trade_until_win:
+                            active_day = None
+                        continue
+                    elif row['high'] >= entry_price + backtest_settings.strategy.take_profit:
+                        close_trade(entry_price + backtest_settings.strategy.take_profit, row['timestamp'], 'take_profit', row)
+                        if backtest_settings.strategy.trade_until_loss:
+                            active_day = None
+                        continue
+                elif side == 'short':
+                    if row['high'] >= entry_price + backtest_settings.strategy.stop_loss:
+                        close_trade(entry_price + backtest_settings.strategy.stop_loss, row['timestamp'], 'stop_loss', row)
+                        if backtest_settings.strategy.trade_until_win:
+                            active_day = None
+                        continue
+                    elif row['low'] <= entry_price - backtest_settings.strategy.take_profit:
+                        close_trade(entry_price - backtest_settings.strategy.take_profit, row['timestamp'], 'take_profit', row)
+                        if backtest_settings.strategy.trade_until_loss:
+                            active_day = None
+                        continue
+
+                # Exit if max holding bars reached
+                if backtest_settings.strategy.max_holding_bars:
+                    holding_bars = i - current_trade['entry_index']
+                    if holding_bars >= backtest_settings.strategy.max_holding_bars:
+                        close_trade(row['close'], row['timestamp'], 'max_holding_bars', row)
+                        continue
+
+                # Exit at end of day
+                if row['trading_date'] != prev_row['trading_date']:
+                    close_trade(prev_row['close'], prev_row['timestamp'], 'eod_close', row)
                     continue
-                elif row['high'] >= entry_price + backtest_settings.strategy.take_profit:
-                    close_trade(entry_price + backtest_settings.strategy.take_profit, row['timestamp'], 'take_profit', row)
-                    if backtest_settings.strategy.trade_until_loss:
-                        active_day = None
-                    continue
-            elif side == 'short':
-                if row['high'] >= entry_price + backtest_settings.strategy.stop_loss:
-                    close_trade(entry_price + backtest_settings.strategy.stop_loss, row['timestamp'], 'stop_loss', row)
-                    if backtest_settings.strategy.trade_until_win:
-                        active_day = None
-                    continue
-                elif row['low'] <= entry_price - backtest_settings.strategy.take_profit:
-                    close_trade(entry_price - backtest_settings.strategy.take_profit, row['timestamp'], 'take_profit', row)
-                    if backtest_settings.strategy.trade_until_loss:
-                        active_day = None
-                    continue
-
-            # Exit if max holding bars reached
-            if backtest_settings.strategy.max_holding_bars:
-                holding_bars = i - current_trade['entry_index']
-                if holding_bars >= backtest_settings.strategy.max_holding_bars:
-                    close_trade(row['close'], row['timestamp'], 'max_holding_bars', row)
-                    continue
-
-            # Exit at end of day
-            if row['trading_date'] != prev_row['trading_date']:
-                close_trade(prev_row['close'], prev_row['timestamp'], 'eod_close', row)
-                continue
-        else:
-            if row['trading_date'] == active_day:
-                continue
-
-            # On 1-min chart, only enter at 5-min close
-            # if row['timestamp'].minute % 5 != 4:
-            #     continue
-
-            if enable_time_filter:
-                bar_time = row['timestamp'].time()
-                if not (backtest_settings.strategy.trade_entry_start_time <= bar_time <= backtest_settings.strategy.trade_entry_end_time):
+            else:
+                if row['trading_date'] == active_day:
                     continue
 
-            # if row['prev_day_high'] < row['prev2_day_high'] and row['prev_day_low'] > row['prev2_day_low']:
-            if notna(row['prev_day_high']) and notna(row['prev2_day_high']):
-                if row['close'] - row['prev_day_high'] > 0:
-                        # if row['high'] - row['close'] < 0.4:
-                    if i + 1 < len(df):
-                        next_bar = df.iloc[i + 1]
-                        current_trade = {
-                            'side': 'long',
-                            'entry_time': next_bar['timestamp'],
-                            'entry_price': next_bar['open'],
-                            'entry_index': i + 1,
-                        }
-                        active_day = row['trading_date']
+                if enable_time_filter:
+                    bar_time = row['timestamp'].time()
+                    if not (backtest_settings.strategy.trade_entry_start_time <= bar_time <= backtest_settings.strategy.trade_entry_end_time):
+                        continue
 
-            if notna(row['prev_day_low']) and notna(row['prev2_day_low']):
-                if row['close'] - row['prev_day_low'] < 0:
-                        # if row['close'] - row['low'] < 0.4:
-                    if i + 1 < len(df):
-                        next_bar = df.iloc[i + 1]
-                        current_trade = {
-                            'side': 'short',
-                            'entry_time': next_bar['timestamp'],
-                            'entry_price': next_bar['open'],
-                            'entry_index': i + 1,
-                        }
-                        active_day = row['trading_date']
+                if notna(row['prev_day_high']) and notna(row['prev2_day_high']):
+                    if row['close'] - row['prev_day_high'] > 0:
+                        if i + 1 < len(df):
+                            next_bar = df.iloc[i + 1]
+                            current_trade = {
+                                'side': 'long',
+                                'entry_time': next_bar['timestamp'],
+                                'entry_price': next_bar['open'],
+                                'entry_index': i + 1,
+                            }
+                            active_day = row['trading_date']
+
+                if notna(row['prev_day_low']) and notna(row['prev2_day_low']):
+                    if row['close'] - row['prev_day_low'] < 0:
+                        if i + 1 < len(df):
+                            next_bar = df.iloc[i + 1]
+                            current_trade = {
+                                'side': 'short',
+                                'entry_time': next_bar['timestamp'],
+                                'entry_price': next_bar['open'],
+                                'entry_index': i + 1,
+                            }
+                            active_day = row['trading_date']
+    elif strategy == "ema_respect_follow":
+        for i in range(1, len(df)):
+            row = df.iloc[i]
+            prev_row = df.iloc[i - 1]
+
+            if current_trade:
+                side = current_trade['side']
+                entry_price = current_trade['entry_price']
+
+                # Exit: take profit / stop loss
+                if side == 'long':
+                    if row['low'] <= float(entry_price) - backtest_settings.strategy.stop_loss:
+                        close_trade(float(entry_price) - backtest_settings.strategy.stop_loss, row['timestamp'], 'stop_loss', row)
+                        if backtest_settings.strategy.trade_until_win:
+                            active_day = None
+                        continue
+                    elif row['high'] >= float(entry_price) + backtest_settings.strategy.take_profit:
+                        close_trade(float(entry_price) + backtest_settings.strategy.take_profit, row['timestamp'], 'take_profit', row)
+                        if backtest_settings.strategy.trade_until_loss:
+                            active_day = None
+                        continue
+                elif side == 'short':
+                    if row['high'] >= float(entry_price) + backtest_settings.strategy.stop_loss:
+                        close_trade(float(entry_price) + backtest_settings.strategy.stop_loss, row['timestamp'], 'stop_loss', row)
+                        if backtest_settings.strategy.trade_until_win:
+                            active_day = None
+                        continue
+                    elif row['low'] <= float(entry_price) - backtest_settings.strategy.take_profit:
+                        close_trade(float(entry_price) - backtest_settings.strategy.take_profit, row['timestamp'], 'take_profit', row)
+                        if backtest_settings.strategy.trade_until_loss:
+                            active_day = None
+                        continue
+
+                # Exit if max holding bars reached
+                if backtest_settings.strategy.max_holding_bars:
+                    holding_bars = i - current_trade['entry_index']
+                    if holding_bars >= backtest_settings.strategy.max_holding_bars:
+                        close_trade(row['close'], row['timestamp'], 'max_holding_bars', row)
+                        continue
+
+                # Exit at end of day
+                if row['trading_date'] != prev_row['trading_date']:
+                    close_trade(prev_row['close'], prev_row['timestamp'], 'eod_close', row)
+                    continue
+            else:
+                if row['trading_date'] == active_day:
+                    continue
+
+                if enable_time_filter:
+                    bar_time = row['timestamp'].time()
+                    if not (backtest_settings.strategy.trade_entry_start_time <= bar_time <= backtest_settings.strategy.trade_entry_end_time):
+                        continue
+
+                if row['prev_day_high'] < row['prev2_day_high'] and row['prev_day_low'] > row['prev2_day_low']:
+                    if notna(row['prev_day_high']) and notna(row['prev2_day_high']):
+                        if row['close'] - row['prev_day_high'] > 0:
+                            if i + 1 < len(df):
+                                next_bar = df.iloc[i + 1]
+                                current_trade = {
+                                    'side': 'long',
+                                    'entry_time': next_bar['timestamp'],
+                                    'entry_price': next_bar['open'],
+                                    'entry_index': i + 1,
+                                }
+                                active_day = row['trading_date']
+
+                    if notna(row['prev_day_low']) and notna(row['prev2_day_low']):
+                        if row['close'] - row['prev_day_low'] < 0:
+                            if i + 1 < len(df):
+                                next_bar = df.iloc[i + 1]
+                                current_trade = {
+                                    'side': 'short',
+                                    'entry_time': next_bar['timestamp'],
+                                    'entry_price': next_bar['open'],
+                                    'entry_index': i + 1,
+                                }
+                                active_day = row['trading_date']
 
     return DataFrame(trades)

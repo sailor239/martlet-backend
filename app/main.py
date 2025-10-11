@@ -1,15 +1,15 @@
 import json
 from starlette.responses import StreamingResponse
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
 from app.db import db
 from app.db_init import init_db_with_csv
 from loguru import logger
 from app.services.scheduler import scheduler_service
-from app.services.backtest import run_backtest, backtest_settings
+from app.services.backtest import run_backtest
 from app.utils.backtest_utils import get_daily_summary
-from app.models import CandleRequest, Trade, TradeCreate, BacktestRequest, BacktestResult
+from app.models import CandleRequest, Trade, TradeCreate, BacktestRequest, BacktestResult, BacktestSettings
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timezone, timedelta
 import random
@@ -168,33 +168,52 @@ async def delete_trade(trade_id: int):
     return
 
 
-@app.post("/backtest/{ticker}/{timeframe}/", response_model=list[BacktestResult])
-async def fetch_backtest_results_by_ticker_by_timeframe(ticker: str, timeframe: str) -> list[BacktestResult]:
-    logger.debug(f"Fetching backtest results for {ticker} | {timeframe}")
-    results = await db.fetch_backtest_results_by_ticker_by_timeframe(ticker, timeframe)
+@app.get("/backtest/{ticker}/{timeframe}/", response_model=list[BacktestResult])
+async def fetch_backtest_results_by_ticker_by_timeframe(ticker: str, timeframe: str, strategy: str = Query(..., description="Trading strategy name")) -> list[BacktestResult]:
+    logger.debug(f"Fetching backtest results for {ticker} | {timeframe} | {strategy}")
+    results = await db.fetch_backtest_results_by_ticker_by_timeframe(ticker, timeframe, strategy)
+    # print(results)
     if not results:
-        raise HTTPException(status_code=404, detail=f'No backtest results found for "{ticker}" and "{timeframe}"')
+        raise HTTPException(status_code=404, detail=f'No backtest results found for "{ticker}" | "{timeframe}" | "{strategy}"')
     return [
         BacktestResult(timestamp=r["trading_date"], equity=r["equity"], pnl=r["pnl"])
         for r in results
     ]
 
-@app.post("/backtest/", response_model=list[BacktestResult])
-async def backtest(req: BacktestRequest):
+@app.post("/trigger_backtest_run/", response_model=list[BacktestResult])
+async def trigger_backtest_run(req: BacktestRequest):
     data = await db.fetch_market_snapshot_by_ticker_by_timeframe(req.ticker, req.timeframe)
     if not data:
         raise HTTPException(status_code=404, detail=f'No market data found for "{req.ticker}" and "{req.timeframe}"')
 
     df = DataFrame(data)
-    results = run_backtest(df)
+    
+    start_date = datetime(2022, 1, 1, tzinfo=timezone.utc)
+    df = df[df['timestamp'] >= start_date]
+
+    if req.strategy == "previous_day_breakout":
+        backtest_settings = BacktestSettings()
+        backtest_settings.strategy.take_profit = 4
+        backtest_settings.strategy.stop_loss = 5
+        backtest_settings.strategy.risk_per_trade = 0.05
+    elif req.strategy == "ema_respect_follow":
+        backtest_settings = BacktestSettings()
+        backtest_settings.strategy.take_profit = 1.2
+        backtest_settings.strategy.stop_loss = 28
+        backtest_settings.strategy.risk_per_trade = 1
+    else:
+        raise HTTPException(status_code=400, detail=f'Unknown strategy "{req.strategy}"')
+
+    results = run_backtest(df, req.strategy, backtest_settings)
 
     df_daily_summary, drawdown_periods = get_daily_summary(results, backtest_settings.account.starting_cash)
-    logger.debug(f'Backtest completed for "{req.ticker}" | "{drawdown_periods}"')
+    logger.info(f'Backtest completed for "{req.ticker}" | "{req.timeframe}"')
     results_to_save = [
         {
             "trading_date": row["trading_date"],
             "equity": row["equity"],
             "pnl": row["pnl"],
+            "strategy": req.strategy,
         }
         for _, row in df_daily_summary.iterrows()
     ]
@@ -206,7 +225,7 @@ async def backtest(req: BacktestRequest):
 
     return [
         BacktestResult(timestamp=r["trading_date"], equity=r["equity"], pnl=r["pnl"])
-        for r in latest_results
+        for r in results_to_save
     ]
 
 

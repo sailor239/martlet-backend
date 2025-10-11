@@ -190,18 +190,19 @@ class DatabaseManager:
         self,
         ticker: str,
         timeframe: str,
-        limit: int = 500
+        strategy: str,
+        limit: int = 5000
     ):
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT trading_date, equity, pnl
                 FROM backtest_results
-                WHERE ticker = $1 AND timeframe = $2
+                WHERE ticker = $1 AND timeframe = $2 AND strategy = $3
                 ORDER BY trading_date DESC
-                LIMIT $3
+                LIMIT $4
                 """,
-                ticker, timeframe, limit
+                ticker, timeframe, strategy, limit
             )
         # Return in chronological order
         return list(reversed([dict(r) for r in rows]))
@@ -235,13 +236,14 @@ class DatabaseManager:
                         r["trading_date"],
                         r["equity"],
                         r["pnl"],
+                        r["strategy"],
                     ))
 
                 await conn.executemany("""
                     INSERT INTO backtest_results
-                        (ticker, timeframe, trading_date, equity, pnl)
-                    VALUES ($1, $2, $3, $4, $5)
-                    ON CONFLICT (ticker, timeframe, trading_date)
+                        (ticker, timeframe, trading_date, equity, pnl, strategy)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (ticker, timeframe, trading_date, strategy)
                     DO UPDATE SET
                         equity = EXCLUDED.equity,
                         pnl = EXCLUDED.pnl,

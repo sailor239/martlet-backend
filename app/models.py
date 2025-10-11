@@ -33,6 +33,7 @@ class TradeCreate(BaseModel):
 class BacktestRequest(BaseModel):
     ticker: str
     timeframe: str
+    strategy: Literal["previous_day_breakout", "ema_respect_follow"]
 
 class BacktestResult(BaseModel):
     timestamp: datetime
@@ -47,7 +48,7 @@ class AccountSettings(BaseModel):
 class StrategySettings(BaseModel):
     take_profit: float = 4
     stop_loss: float = 5
-    risk_per_trade: float = 0.02
+    risk_per_trade: float = 0.05
     trade_until_loss: bool = False
     trade_until_win: bool = True
     position_size_limit_enabled: bool = False

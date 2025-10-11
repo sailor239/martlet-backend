@@ -6,9 +6,10 @@ CREATE TABLE backtest_results (
     trading_date DATE NOT NULL,
     equity NUMERIC NOT NULL,
     pnl NUMERIC NOT NULL,
+    strategy VARCHAR(100) NOT NULL,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(ticker, timeframe, trading_date)
+    UNIQUE(ticker, timeframe, trading_date, strategy)
 );
 
 
