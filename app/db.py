@@ -186,23 +186,23 @@ class DatabaseManager:
             deleted_count = int(result.split(" ")[1])
             return deleted_count > 0
     
-    async def fetch_backtest_results_by_ticker_by_timeframe(
+    async def fetch_backtest_results(
         self,
+        strategy: str,
         ticker: str,
         timeframe: str,
-        strategy: str,
-        limit: int = 5000
+        limit: int = 10000
     ):
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT trading_date, equity, pnl
                 FROM backtest_results
-                WHERE ticker = $1 AND timeframe = $2 AND strategy = $3
+                WHERE strategy = $1 AND ticker = $2 AND timeframe = $3
                 ORDER BY trading_date DESC
                 LIMIT $4
                 """,
-                ticker, timeframe, strategy, limit
+                strategy, ticker, timeframe, limit
             )
         # Return in chronological order
         return list(reversed([dict(r) for r in rows]))

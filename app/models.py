@@ -33,7 +33,7 @@ class TradeCreate(BaseModel):
 class BacktestRequest(BaseModel):
     ticker: str
     timeframe: str
-    strategy: Literal["previous_day_breakout", "ema_respect_follow"]
+    strategy: Literal["previous_day_breakout", "compression_breakout_scalp", "ema_respect_follow"]
 
 class BacktestResult(BaseModel):
     timestamp: datetime

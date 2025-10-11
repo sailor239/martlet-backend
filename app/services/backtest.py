@@ -126,7 +126,7 @@ def run_backtest(df: DataFrame, strategy: str, backtest_settings: BacktestSettin
                                 'entry_index': i + 1,
                             }
                             active_day = row['trading_date']
-    elif strategy == "ema_respect_follow":
+    elif strategy == "compression_breakout_scalp":
         for i in range(1, len(df)):
             row = df.iloc[i]
             prev_row = df.iloc[i - 1]

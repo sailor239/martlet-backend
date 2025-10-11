@@ -168,15 +168,26 @@ async def delete_trade(trade_id: int):
     return
 
 
-@app.get("/backtest/{ticker}/{timeframe}/", response_model=list[BacktestResult])
-async def fetch_backtest_results_by_ticker_by_timeframe(ticker: str, timeframe: str, strategy: str = Query(..., description="Trading strategy name")) -> list[BacktestResult]:
-    logger.debug(f"Fetching backtest results for {ticker} | {timeframe} | {strategy}")
-    results = await db.fetch_backtest_results_by_ticker_by_timeframe(ticker, timeframe, strategy)
-    # print(results)
+@app.get("/backtest-results/", response_model=list[BacktestResult])
+async def backtest_results(
+    strategy: str = Query(..., description="Trading strategy name"),
+    ticker: str = Query(..., description="Ticker symbol"),
+    timeframe: str = Query(..., description="Timeframe, e.g., 5min, 15min")
+):
+    logger.debug(f"Fetching backtest results for {strategy} | {ticker} | {timeframe}")
+    results = await db.fetch_backtest_results(strategy, ticker, timeframe)
+    
     if not results:
-        raise HTTPException(status_code=404, detail=f'No backtest results found for "{ticker}" | "{timeframe}" | "{strategy}"')
+        raise HTTPException(
+            status_code=404,
+            detail=f'No backtest results found for "{strategy}" | "{ticker}" | "{timeframe}"'
+        )
     return [
-        BacktestResult(timestamp=r["trading_date"], equity=r["equity"], pnl=r["pnl"])
+        BacktestResult(
+            timestamp=r["trading_date"],
+            equity=r["equity"],
+            pnl=r["pnl"]
+        )
         for r in results
     ]
 
@@ -196,7 +207,7 @@ async def trigger_backtest_run(req: BacktestRequest):
         backtest_settings.strategy.take_profit = 4
         backtest_settings.strategy.stop_loss = 5
         backtest_settings.strategy.risk_per_trade = 0.05
-    elif req.strategy == "ema_respect_follow":
+    elif req.strategy == "compression_breakout_scalp":
         backtest_settings = BacktestSettings()
         backtest_settings.strategy.take_profit = 1.2
         backtest_settings.strategy.stop_loss = 28
