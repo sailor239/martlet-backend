@@ -11,11 +11,10 @@ from app.services.backtest import run_backtest
 from app.utils.backtest_utils import get_daily_summary
 from app.models import CandleRequest, Trade, TradeCreate, BacktestRequest, BacktestResult, BacktestSettings
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime, timezone, timedelta
-import random
+from datetime import datetime, date, timezone, timedelta
 from zoneinfo import ZoneInfo
-from typing import Literal, cast
-from pandas import DataFrame
+from pandas import DataFrame, date_range, concat, to_datetime
+import random
 
 
 @asynccontextmanager
@@ -24,7 +23,7 @@ async def lifespan(app: FastAPI):
     try:
         await db.connect()
         # await init_db_with_csv()
-        scheduler_service.start()
+        # scheduler_service.start()
         logger.info("✅ Application startup complete")
     except Exception as e:
         logger.error(f"❌ Error during startup: {e}")
@@ -44,6 +43,7 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -182,6 +182,8 @@ async def backtest_results(
             status_code=404,
             detail=f'No backtest results found for "{strategy}" | "{ticker}" | "{timeframe}"'
         )
+    logger.debug(f"Fetched {len(results)} records from DB")
+
     return [
         BacktestResult(
             timestamp=r["trading_date"],
@@ -201,6 +203,12 @@ async def trigger_backtest_run(req: BacktestRequest):
     
     start_date = datetime(2022, 1, 1, tzinfo=timezone.utc)
     df = df[df['timestamp'] >= start_date]
+    logger.debug(f"Fetched {len(df)} rows of data from DB for {req.ticker} | {req.timeframe}")
+
+    all_dates = date_range(
+        start=df["timestamp"].min(),
+        end=df["timestamp"].max(),
+    )
 
     if req.strategy == "previous_day_breakout":
         backtest_settings = BacktestSettings()
@@ -219,6 +227,23 @@ async def trigger_backtest_run(req: BacktestRequest):
 
     df_daily_summary, drawdown_periods = get_daily_summary(results, backtest_settings.account.starting_cash)
     logger.info(f'Backtest completed for "{req.ticker}" | "{req.timeframe}"')
+
+    calendar_df = DataFrame({"trading_date": all_dates})
+    calendar_df["trading_date"] = calendar_df["trading_date"].dt.date
+    df_daily_summary = calendar_df.merge(df_daily_summary, on="trading_date", how="left")
+
+    # Insert the start row at the beginning
+    start_row = DataFrame({
+        "trading_date": [start_date.date()],
+        "pnl": [0],
+        "equity": [10000],
+    })
+    df_daily_summary = concat([start_row, df_daily_summary[["trading_date", "pnl", "equity"]]], ignore_index=True)
+
+    # forward-fill equity, fill pnl=0 for missing days
+    df_daily_summary["equity"] = df_daily_summary["equity"].ffill()
+    df_daily_summary["pnl"] = df_daily_summary["pnl"].fillna(0)
+
     results_to_save = [
         {
             "trading_date": row["trading_date"],

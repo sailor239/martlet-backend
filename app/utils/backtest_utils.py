@@ -1,5 +1,5 @@
 import math
-from datetime import time, datetime, timedelta
+from datetime import time, date, datetime, timedelta
 import pandas as pd
 import numpy as np
 from pandas import DataFrame
@@ -102,7 +102,7 @@ def get_daily_summary(trades: DataFrame, starting_cash: float) -> tuple[DataFram
     # If curve ends in drawdown
     if in_drawdown:
         drawdown_periods.append((start_date, df_daily_summary['trading_date'].iloc[-1]))
-
+    
     return df_daily_summary, drawdown_periods
 
 
