@@ -115,7 +115,7 @@ async def fetch_trades(ticker: str, trading_date: str):
     async with db.pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT id, direction, entry_price, exit_price, entry_time, exit_time, size, notes
+            SELECT id, direction, entry_price, exit_price, entry_time, exit_time, size, type, notes
             FROM trades
             WHERE ticker = $1
               AND DATE(entry_time AT TIME ZONE 'Asia/Singapore') = $2
@@ -264,51 +264,6 @@ async def trigger_backtest_run(req: BacktestRequest):
         for r in results_to_save
     ]
 
-
-@app.post("/candles/")
-async def get_ticker_candles(payload: CandleRequest):
-    """Stream candle data for a given ticker and timeframe"""
-
-    ticker = payload.ticker
-    timeframe = payload.timeframe
-    trading_date = payload.trading_date
-
-    # now_utc = datetime.now(timezone.utc)
-
-    async def row_stream():
-        async with db.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT *
-                FROM (
-                    SELECT timestamp, ticker, timeframe, open, high, low, close, trading_date, ema20, prev_day_high, prev_day_low
-                    FROM market_snapshot
-                    WHERE ticker = $1 AND timeframe = $2 AND trading_date = $3
-                    ORDER BY timestamp DESC
-                ) sub
-                ORDER BY timestamp ASC
-                """,
-                ticker, timeframe, trading_date
-            )
-
-        if not rows:
-            return
-        
-        # latest_trading_date = max([r["trading_date"] for r in rows])
-        # latest_rows = [r for r in rows if r["trading_date"] == latest_trading_date]
-
-        # Yield rows matching latest latest_trading_date
-        for record in rows:
-            row = dict(record)
-
-            ts_utc = row["timestamp"]
-            if ts_utc.tzinfo is None:
-                ts_utc = ts_utc.replace(tzinfo=timezone.utc)
-            row["timestamp_sgt"] = ts_utc.astimezone(ZoneInfo("Asia/Singapore"))
-
-            yield json.dumps(row, default=str) + "\n"
-
-    return StreamingResponse(row_stream(), media_type="application/json")
 
 @app.get("/status")
 async def get_status():

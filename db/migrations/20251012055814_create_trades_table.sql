@@ -6,6 +6,7 @@ CREATE TABLE trades (
     entry_price DECIMAL(12, 5) NOT NULL,
     exit_price DECIMAL(12, 5) NOT NULL,
     size DOUBLE PRECISION NOT NULL,
+    type VARCHAR(20) NOT NULL,
     entry_time TIMESTAMPTZ NOT NULL,
     exit_time TIMESTAMPTZ NOT NULL,
     notes TEXT,

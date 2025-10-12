@@ -139,19 +139,20 @@ class DatabaseManager:
             row = await conn.fetchrow(
                 """
                 INSERT INTO trades (
-                    ticker, direction, size, entry_price, exit_price,
+                    ticker, direction, size, type, entry_price, exit_price,
                     entry_time, exit_time, notes, created_at
                 )
                 VALUES (
                     LOWER($1), $2, $3, $4, $5,
-                    $6, $7, $8, NOW()
+                    $6, $7, $8, $9, NOW()
                 )
-                RETURNING id, ticker, direction, size, entry_price, exit_price,
+                RETURNING id, ticker, direction, size, type, entry_price, exit_price,
                           entry_time, exit_time, notes, created_at
                 """,
                 trade_data["ticker"],
                 trade_data["direction"],
                 trade_data["size"],
+                trade_data["type"],
                 trade_data["entry_price"],
                 trade_data.get("exit_price"),
                 trade_data["entry_time"],
@@ -165,7 +166,7 @@ class DatabaseManager:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT id, ticker, direction, entry_price, exit_price, size,
+                SELECT id, ticker, direction, entry_price, exit_price, size, type,
                        entry_time, exit_time, notes, created_at
                 FROM trades
                 ORDER BY created_at DESC
@@ -182,7 +183,6 @@ class DatabaseManager:
                 "DELETE FROM trades WHERE id = $1",
                 trade_id
             )
-            # asyncpg returns 'DELETE <n>', extract <n>
             deleted_count = int(result.split(" ")[1])
             return deleted_count > 0
     

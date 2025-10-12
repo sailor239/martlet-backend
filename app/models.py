@@ -15,6 +15,7 @@ class Trade(BaseModel):
     entry_price: float
     exit_price: Optional[float] = None
     size: float
+    type: Literal["simulated", "real"]
     entry_time: datetime
     exit_time: Optional[datetime] = None
     notes: Optional[str] = None
@@ -26,6 +27,7 @@ class TradeCreate(BaseModel):
     entry_price: float
     exit_price: Optional[float] = None
     size: float
+    type: Literal["simulated", "real"]
     entry_time: datetime
     exit_time: Optional[datetime] = None
     notes: Optional[str] = None
