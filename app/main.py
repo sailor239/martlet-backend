@@ -1,5 +1,3 @@
-import json
-from starlette.responses import StreamingResponse
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
@@ -9,12 +7,14 @@ from loguru import logger
 from app.services.scheduler import scheduler_service
 from app.services.backtest import run_backtest
 from app.utils.backtest_utils import get_daily_summary
-from app.models import CandleRequest, Trade, TradeCreate, BacktestRequest, BacktestResult, BacktestSettings
+from app.models import CandleRequest, BacktestRequest, BacktestResult, BacktestSettings
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime, date, timezone, timedelta
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-from pandas import DataFrame, date_range, concat, to_datetime
-import random
+from pandas import DataFrame, date_range, concat
+from app.routes import (
+    trades, status
+)
 
 
 @asynccontextmanager
@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
     try:
         await db.connect()
         # await init_db_with_csv()
-        # scheduler_service.start()
+        scheduler_service.start()
         logger.info("✅ Application startup complete")
     except Exception as e:
         logger.error(f"❌ Error during startup: {e}")
@@ -47,6 +47,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(trades.router)
+app.include_router(status.router)
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
@@ -100,72 +103,6 @@ async def fetch_intraday_data(payload: CandleRequest):
         result.append(row)
 
     return result
-
-
-@app.get("/trades/{ticker}/{trading_date}")
-async def fetch_trades(ticker: str, trading_date: str):
-    logger.info(f"Fetching trades for {ticker} on {trading_date}")
-
-    # Parse trading_date string to a date object
-    try:
-        trading_date_obj = datetime.strptime(trading_date, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid trading_date format. Use YYYY-MM-DD.")
-
-    async with db.pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT id, direction, entry_price, exit_price, entry_time, exit_time, size, type, notes
-            FROM trades
-            WHERE ticker = $1
-              AND DATE(entry_time AT TIME ZONE 'Asia/Singapore') = $2
-            ORDER BY entry_time ASC
-            """,
-            ticker, trading_date_obj
-        )
-
-    trades = []
-    for r in rows:
-        trade = dict(r)
-
-        # Convert to SGT
-        for key in ["entry_time", "exit_time"]:
-            ts = trade.get(key)
-            if ts:
-                # Ensure UTC
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
-                trade[key] = ts.astimezone(ZoneInfo("Asia/Singapore")).isoformat()
-
-        trades.append(trade)
-
-    return trades
-
-
-@app.get("/trades/", response_model=list[Trade])
-async def list_trades(limit: int = 100):
-    """Return recent trades, most recent first"""
-    trades = await db.list_trades(limit=limit)
-    return trades
-
-
-@app.post("/trades/")
-async def create_trade(trade: TradeCreate):
-    try:
-        new_trade = await db.create_trade(trade.model_dump())
-        return new_trade
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"DB error: {e}")
-
-    return new_trade
-
-
-@app.delete("/trades/{trade_id}", status_code=204)
-async def delete_trade(trade_id: int):
-    deleted = await db.delete_trade(trade_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Trade not found")
-    return
 
 
 @app.get("/backtest-results/", response_model=list[BacktestResult])
@@ -263,20 +200,3 @@ async def trigger_backtest_run(req: BacktestRequest):
         BacktestResult(timestamp=r["trading_date"], equity=r["equity"], pnl=r["pnl"])
         for r in results_to_save
     ]
-
-
-@app.get("/status")
-async def get_status():
-    """Get system status"""
-    try:
-        async with db.pool.acquire() as conn:
-            await conn.fetchval("SELECT 1")
-        db_status = "connected"
-    except Exception as e:
-        db_status = f"error: {str(e)}"
-    
-    return {
-        "database": db_status,
-        "scheduler": "running" if scheduler_service.is_running else "stopped",
-        "jobs": len(scheduler_service.get_jobs())
-    }

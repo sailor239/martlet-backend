@@ -1,9 +1,10 @@
 import asyncpg
 from loguru import logger
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, date
 import pandas as pd
 from app.config import DATABASE_URL
+from app.models import TradeCreate
 
 
 class DatabaseManager:
@@ -133,31 +134,32 @@ class DatabaseManager:
             logger.error(f"❌ Failed to upsert candles for {ticker} {timeframe}: {e}")
             raise
     
-    async def create_trade(self, trade_data: dict):
+    async def create_trade(self, trade_data: TradeCreate):
         """Insert a new trade and return the inserted row"""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 INSERT INTO trades (
                     ticker, direction, size, type, entry_price, exit_price,
-                    entry_time, exit_time, notes, created_at
+                    entry_time, exit_time, trading_date, notes, created_at
                 )
                 VALUES (
                     LOWER($1), $2, $3, $4, $5,
-                    $6, $7, $8, $9, NOW()
+                    $6, $7, $8, $9, $10, NOW()
                 )
                 RETURNING id, ticker, direction, size, type, entry_price, exit_price,
-                          entry_time, exit_time, notes, created_at
+                          entry_time, exit_time, trading_date, notes, created_at
                 """,
-                trade_data["ticker"],
-                trade_data["direction"],
-                trade_data["size"],
-                trade_data["type"],
-                trade_data["entry_price"],
-                trade_data.get("exit_price"),
-                trade_data["entry_time"],
-                trade_data.get("exit_time"),
-                trade_data.get("notes"),
+                trade_data.ticker,
+                trade_data.direction,
+                trade_data.size,
+                trade_data.type,
+                trade_data.entry_price,
+                trade_data.exit_price,
+                trade_data.entry_time,
+                trade_data.exit_time,
+                trade_data.trading_date,
+                trade_data.notes,
             )
             return dict(row)
     
@@ -166,9 +168,7 @@ class DatabaseManager:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT id, ticker, direction, entry_price, exit_price, size, type,
-                       entry_time, exit_time, notes, created_at
-                FROM trades
+                SELECT * FROM trades
                 ORDER BY created_at DESC
                 LIMIT $1
                 """,
@@ -186,6 +186,19 @@ class DatabaseManager:
             deleted_count = int(result.split(" ")[1])
             return deleted_count > 0
     
+    async def fetch_trades_by_ticker_date_type(self, ticker: str, trading_date: date, trade_type: str):
+        query = """
+            SELECT id, direction, entry_price, exit_price, entry_time, exit_time, size, type, notes
+            FROM trades
+            WHERE ticker = $1
+            AND trading_date = $2
+            AND type = $3
+            ORDER BY entry_time ASC
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(query, ticker, trading_date, trade_type)
+            return [dict(r) for r in rows]
+            
     async def fetch_backtest_results(
         self,
         strategy: str,

@@ -183,10 +183,6 @@ def analyze_equity_curve(df: pd.DataFrame) -> dict:
     }
 
 
-
-
-
-
 def add_prev_day_high_and_low(df):
     df = df.copy()
 

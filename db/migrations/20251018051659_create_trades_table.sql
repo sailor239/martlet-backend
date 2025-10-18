@@ -9,6 +9,7 @@ CREATE TABLE trades (
     type VARCHAR(20) NOT NULL,
     entry_time TIMESTAMPTZ NOT NULL,
     exit_time TIMESTAMPTZ NOT NULL,
+    trading_date DATE NOT NULL,
     notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -17,3 +18,4 @@ CREATE INDEX idx_trades_ticker ON trades (ticker);
 
 -- migrate:down
 DROP TABLE trades;
+DROP INDEX idx_trades_ticker;

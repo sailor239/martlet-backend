@@ -18,6 +18,7 @@ class Trade(BaseModel):
     type: Literal["simulated", "real"]
     entry_time: datetime
     exit_time: Optional[datetime] = None
+    trading_date: Optional[date] = None
     notes: Optional[str] = None
     created_at: datetime
 
@@ -30,6 +31,7 @@ class TradeCreate(BaseModel):
     type: Literal["simulated", "real"]
     entry_time: datetime
     exit_time: Optional[datetime] = None
+    trading_date: Optional[date] = None
     notes: Optional[str] = None
 
 class BacktestRequest(BaseModel):
