@@ -4,7 +4,7 @@ from typing import Optional
 from datetime import datetime, date
 import pandas as pd
 from app.config import DATABASE_URL
-from app.models import TradeCreate
+from app.schemas.trade import TradeCreate
 
 
 class DatabaseManager:

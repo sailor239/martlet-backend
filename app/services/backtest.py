@@ -1,5 +1,5 @@
 from pandas import DataFrame, notna
-from app.models import BacktestSettings
+from app.schemas.backtest import BacktestSettings
 from app.utils.backtest_utils import (
     get_position_size, update_iteration_data
 )

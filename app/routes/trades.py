@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Query
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from app.db import db
-from app.models import Trade, TradeCreate
+from app.schemas.trade import Trade, TradeCreate
 from app.utils.date_utils import get_trading_date
 from loguru import logger
 

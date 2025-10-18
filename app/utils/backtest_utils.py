@@ -3,7 +3,7 @@ from datetime import time, date, datetime, timedelta
 import pandas as pd
 import numpy as np
 from pandas import DataFrame
-from app.models import BacktestSettings
+from app.schemas.backtest import BacktestSettings
 
 FOREX_MARKET_HOURS = [
     (time(7, 0), time(6, 0)),  # 07:00 → next day 05:55

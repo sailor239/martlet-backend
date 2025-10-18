@@ -7,7 +7,8 @@ from loguru import logger
 from app.services.scheduler import scheduler_service
 from app.services.backtest import run_backtest
 from app.utils.backtest_utils import get_daily_summary
-from app.models import CandleRequest, BacktestRequest, BacktestResult, BacktestSettings
+from app.schemas.core import CandleRequest
+from app.schemas.backtest import BacktestRequest, BacktestResult, BacktestSettings
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -23,7 +24,7 @@ async def lifespan(app: FastAPI):
     try:
         await db.connect()
         # await init_db_with_csv()
-        scheduler_service.start()
+        # scheduler_service.start()
         logger.info("✅ Application startup complete")
     except Exception as e:
         logger.error(f"❌ Error during startup: {e}")
