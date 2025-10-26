@@ -8,3 +8,6 @@ httpx
 loguru
 pydantic_settings
 passlib[bcrypt]
+pyjwt
+pydantic[email]
+python-multipart

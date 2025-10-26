@@ -263,5 +263,24 @@ class DatabaseManager:
                         created_at = NOW()
                 """, rows)
 
+    async def get_user_by_username(self, username: str) -> Optional[dict]:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT id, username, email, hashed_password, is_active, created_at FROM users WHERE username = $1",
+                username
+            )
+            return dict(row) if row else None
+
+    async def create_user(self, username: str, email: str, hashed_password: str) -> dict:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO users (username, email, hashed_password, is_active, created_at)
+                VALUES (LOWER($1), LOWER($2), $3, TRUE, NOW() AT TIME ZONE 'UTC')
+                RETURNING id, username, email, is_active, created_at
+                """,
+                username, email, hashed_password
+            )
+            return dict(row)
 
 db = DatabaseManager()

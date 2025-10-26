@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from app.routes import (
-    backtest, trades, status
+    auth, backtest, trades, status
 )
 
 
@@ -45,6 +45,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(trades.router)
 app.include_router(status.router)
 app.include_router(backtest.router)
