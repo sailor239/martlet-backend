@@ -31,15 +31,6 @@ async def fetch_trades(
         raise HTTPException(status_code=400, detail="Invalid trading_date format (YYYY-MM-DD required)")
 
     rows = await db.fetch_trades_by_ticker_date_type(ticker, date_obj, type)
-    
-
-    # rows = await db.pool.fetch("""
-    #     SELECT id, direction, entry_price, exit_price, entry_time, exit_time, size, type, notes
-    #     FROM trades
-    #     WHERE ticker = $1 AND DATE(entry_time AT TIME ZONE 'Asia/Singapore') = $2 AND type = $3
-    #     ORDER BY entry_time ASC
-    # """, ticker, date_obj, type)
-    print(rows)
 
     trades = []
     for r in rows:
@@ -51,7 +42,6 @@ async def fetch_trades(
                     ts = ts.replace(tzinfo=timezone.utc)
                 trade[tkey] = ts.astimezone(ZoneInfo("Asia/Singapore")).isoformat()
         trades.append(trade)
-    print(trades)
 
     return trades
 
