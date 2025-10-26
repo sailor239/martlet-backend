@@ -7,7 +7,7 @@ APScheduler
 httpx
 loguru
 pydantic_settings
-passlib[bcrypt]
+passlib[argon2]
 pyjwt
 pydantic[email]
 python-multipart
