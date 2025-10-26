@@ -7,3 +7,4 @@ APScheduler
 httpx
 loguru
 pydantic_settings
+passlib[bcrypt]
