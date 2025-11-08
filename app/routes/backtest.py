@@ -6,7 +6,6 @@ from app.utils.backtest_utils import get_daily_summary
 from loguru import logger
 from pandas import DataFrame, date_range, concat
 from app.services.backtest import run_backtest
-# from app.services._backtest import _run_backtest
 
 
 router = APIRouter(prefix="/backtest", tags=["Backtest"])
@@ -59,19 +58,15 @@ async def trigger_backtest_run(req: BacktestRequest):
         backtest_settings.strategy.take_profit = 4
         backtest_settings.strategy.stop_loss = 5
         backtest_settings.strategy.risk_per_trade = 0.05
-
-        results = run_backtest(df, req.strategy, backtest_settings)
     elif req.strategy == "compression_breakout_scalp":
         backtest_settings = BacktestSettings()
         backtest_settings.strategy.take_profit = 1.2
         backtest_settings.strategy.stop_loss = 28
         backtest_settings.strategy.risk_per_trade = 1
-
-        results = run_backtest(df, req.strategy, backtest_settings)
     else:
         raise HTTPException(status_code=400, detail=f'Unknown strategy "{req.strategy}"')
 
-    
+    results = run_backtest(df, req.strategy, backtest_settings)
 
     df_daily_summary, drawdown_periods = get_daily_summary(results, backtest_settings.account.starting_cash)
     logger.info(f'Backtest completed for "{req.strategy} | {req.ticker}" | "{req.timeframe}"')

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
 from app.db import db
@@ -7,7 +7,7 @@ from loguru import logger
 from app.services.scheduler import scheduler_service
 from app.schemas.core import CandleRequest
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime, timezone
+from datetime import timezone
 from zoneinfo import ZoneInfo
 from app.routes import (
     auth, backtest, trades, status
